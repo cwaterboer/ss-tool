@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}{{ site.name }} · FPA Scoping{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ site.name }}</h1>
+    <p class="mt-1 text-sm text-slate-600">
+      <a class="hover:underline" href="https://www.google.com/maps/search/?api=1&query={{ site.address|urlencode }}" target="_blank" rel="noreferrer">{{ site.address }}</a>
+    </p>
+    <p class="mt-1 text-sm text-slate-500">{{ site.store_type|default:'Store type not set' }}</p>
+    {% if site.notes %}<p class="mt-3 text-sm text-slate-600">{{ site.notes }}</p>{% endif %}
+  </div>
+  <a href="{% url 'sites:scans:create' site.pk %}" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">New scan</a>
+</div>
+
+<div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+  <table class="min-w-full divide-y divide-slate-200 text-sm">
+    <thead class="bg-slate-50 text-left text-slate-500">
+      <tr>
+        <th class="px-4 py-3 font-medium">Scan</th>
+        <th class="px-4 py-3 font-medium">Status</th>
+        <th class="px-4 py-3 font-medium">Frames</th>
+        <th class="px-4 py-3 font-medium">Created</th>
+        <th class="px-4 py-3 font-medium">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-200">
+      {% for scan in site.scans.all %}
+        <tr>
+          <td class="px-4 py-3 font-medium text-slate-900">{{ scan.name }}</td>
+          <td class="px-4 py-3">{% include 'scans/_status_badge.html' with status=scan.status only %}</td>
+          <td class="px-4 py-3 text-slate-600">{{ scan.frame_count|default:'—' }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ scan.created_at|date:'Y-m-d H:i' }}</td>
+          <td class="px-4 py-3"><a class="hover:underline" href="{% url 'sites:scans:detail' site.pk scan.pk %}">Open</a></td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td class="px-4 py-8 text-center text-slate-500" colspan="5">No scans yet.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

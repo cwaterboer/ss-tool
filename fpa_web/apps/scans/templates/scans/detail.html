@@ -1,0 +1,485 @@
+{% extends 'base.html' %}
+{% block title %}{{ scan.name }} · FPA Scoping{% endblock %}
+{% block content %}
+<div class="flex items-start justify-between gap-4 mb-6">
+  <div>
+    <p class="text-sm text-slate-500"><a class="hover:underline" href="{% url 'sites:detail' site.pk %}">{{ site.name }}</a></p>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ scan.name }}</h1>
+    <div class="mt-2">{% include 'scans/_status_badge.html' with status=scan.status badge_id='status-badge' only %}</div>
+  </div>
+  {% if scan.status == 'failed' %}
+    <form method="post" action="{% url 'sites:scans:retry' site.pk scan.pk %}">
+      {% csrf_token %}
+      <button class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" type="submit">Retry</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if scan.status == 'pending' or scan.status == 'processing' %}
+  <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center gap-3">
+      <div class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900"></div>
+      <div>
+        <p class="text-sm font-medium">Processing scan</p>
+        <p class="text-sm text-slate-600">This page will update automatically when the job finishes.</p>
+      </div>
+    </div>
+    <div class="mt-6 grid gap-3 text-sm text-slate-600 md:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-lg bg-slate-50 p-4">Frames: <strong>{{ scan.frame_count|default:'—' }}</strong></div>
+      <div class="rounded-lg bg-slate-50 p-4">Duration: <strong>{{ scan.duration_seconds|default:'—' }}</strong></div>
+      <div class="rounded-lg bg-slate-50 p-4">Mode: <strong>{{ scan.mode }}</strong></div>
+      <div class="rounded-lg bg-slate-50 p-4">Window: <strong>{{ scan.kv_window_size }}</strong></div>
+    </div>
+  </div>
+{% elif scan.status == 'done' %}
+  <div class="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+    <aside class="space-y-4">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Reconstruction</p>
+        <h2 class="mt-2 text-xl font-semibold tracking-tight">Scene bundle</h2>
+        <div class="mt-4 grid gap-3 text-sm text-slate-600">
+          <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span>Floor area</span><strong>{{ scan.floor_area_m2|floatformat:1 }}</strong></div>
+          <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span>Frames</span><strong>{{ scan.frame_count }}</strong></div>
+          <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span>Duration</span><strong>{{ scan.duration_seconds|floatformat:0 }}s</strong></div>
+          <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span>Anchor scale</span><strong>{{ scan.anchor_scale|floatformat:3 }}</strong></div>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <a class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white" href="{{ scan.point_cloud_url }}" download>PLY</a>
+          <a class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" href="{{ scan.web_ply_url }}" download>Web PLY</a>
+          <a class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" href="{{ scan.scene_manifest_url }}" download>Manifest</a>
+        </div>
+      </section>
+
+      <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <img alt="Top-down preview" class="w-full" src="{{ scan.preview_url }}">
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Viewing</p>
+        <div class="mt-3 flex gap-2">
+          <button id="mode-orbit" class="viewer-btn active" type="button">Orbit</button>
+          <button id="mode-walkthrough" class="viewer-btn" type="button">Walkthrough</button>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <button id="overlay-rgb" class="viewer-btn active" type="button">RGB</button>
+          <button id="overlay-height" class="viewer-btn" type="button">Height</button>
+          <button id="overlay-occupancy" class="viewer-btn" type="button">Occupancy</button>
+        </div>
+        <div class="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+          <div class="flex items-center justify-between"><span>Points</span><strong id="pt-count">loading…</strong></div>
+          <div class="mt-2 flex items-center justify-between"><span>Camera path</span><strong id="path-count">loading…</strong></div>
+          <div class="mt-2 flex items-center justify-between"><span>Mode</span><strong id="active-mode">Orbit</strong></div>
+        </div>
+      </section>
+
+      <section id="timeline-card" class="hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Camera path</p>
+        <input id="timeline" class="mt-3 w-full" type="range" min="0" max="0" value="0">
+        <div class="mt-3 flex items-center justify-between text-xs text-slate-600">
+          <button id="playback-toggle" class="rounded-md border border-slate-300 px-2 py-1 font-medium" type="button">Play</button>
+          <span id="timeline-label">Frame 0</span>
+        </div>
+      </section>
+    </aside>
+
+    <section class="space-y-4">
+      <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-950 shadow-sm">
+        <div class="flex items-center justify-between border-b border-white/10 px-4 py-3 text-xs text-white/70">
+          <span>Interactive reconstruction viewer</span>
+          <span id="viewer-status">Loading scene…</span>
+        </div>
+        <canvas id="three-canvas" class="block h-[68vh] w-full cursor-grab bg-slate-950"></canvas>
+        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-slate-900 px-4 py-3 text-xs text-white/70">
+          <div class="flex flex-wrap gap-4">
+            <span>Preview: <strong class="text-white">{{ scan.preview_url|yesno:'ready,missing' }}</strong></span>
+            <span>Point cloud: <strong class="text-white">{{ scan.web_ply_url|yesno:'ready,missing' }}</strong></span>
+            <span>Manifest: <strong class="text-white">{{ scan.scene_manifest_url|yesno:'ready,missing' }}</strong></span>
+          </div>
+          <div class="flex gap-2">
+            <a class="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 font-medium text-white/80" href="{{ scan.camera_path_url }}" download>Camera path</a>
+            <a class="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 font-medium text-white/80" href="{{ scan.web_ply_url }}" download>Web PLY</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <style>
+      .viewer-btn{border:1px solid #cbd5e1;background:#fff;border-radius:0.5rem;padding:0.45rem 0.8rem;font-size:0.875rem;font-weight:600;color:#334155}
+      .viewer-btn:hover{background:#f8fafc}
+      .viewer-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/PLYLoader.js"></script>
+    <script>
+    (function(){
+      const ARTIFACTS_URL = "{{ artifacts_url }}";
+      const canvas = document.getElementById('three-canvas');
+      const viewerStatus = document.getElementById('viewer-status');
+      const pointCountLabel = document.getElementById('pt-count');
+      const pathCountLabel = document.getElementById('path-count');
+      const activeModeLabel = document.getElementById('active-mode');
+      const timelineCard = document.getElementById('timeline-card');
+      const timeline = document.getElementById('timeline');
+      const timelineLabel = document.getElementById('timeline-label');
+      const playbackToggle = document.getElementById('playback-toggle');
+
+      const state = {
+        mode: 'orbit',
+        overlay: 'rgb',
+        playing: false,
+        frameIndex: 0,
+        radius: 20,
+        theta: -0.35,
+        phi: 0.4,
+        targetRadius: 20,
+        targetTheta: -0.35,
+        targetPhi: 0.4,
+        dragging: false,
+        lastX: 0,
+        lastY: 0,
+        geometry: null,
+        rgbColors: null,
+        heightColors: null,
+        occupancyColors: null,
+        cameraFrames: [],
+        modelCenter: new THREE.Vector3(),
+        pathLine: null,
+      };
+
+      function lerp(a, b, t){ return a + (b - a) * t; }
+      function lerpVec(a, b, t){ return a.map((value, index) => lerp(value, b[index], t)); }
+      function normalize(v){
+        const length = Math.hypot(v[0], v[1], v[2]) || 1;
+        return [v[0] / length, v[1] / length, v[2] / length];
+      }
+
+      const renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: false});
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x050816);
+      const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 500);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 1.7);
+      scene.add(ambient);
+      const directional = new THREE.DirectionalLight(0xffffff, 0.9);
+      directional.position.set(6, 10, 4);
+      scene.add(directional);
+
+      const pointMaterial = new THREE.PointsMaterial({size: 0.045, vertexColors: true, sizeAttenuation: true});
+      let pointCloud = null;
+      const loader = new THREE.PLYLoader();
+
+      function resize(){
+        const width = canvas.clientWidth || canvas.parentElement.clientWidth;
+        const height = canvas.clientHeight || Math.floor(window.innerHeight * 0.68);
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      }
+
+      function updateButtons(){
+        document.getElementById('mode-orbit').classList.toggle('active', state.mode === 'orbit');
+        document.getElementById('mode-walkthrough').classList.toggle('active', state.mode === 'walkthrough');
+        document.getElementById('overlay-rgb').classList.toggle('active', state.overlay === 'rgb');
+        document.getElementById('overlay-height').classList.toggle('active', state.overlay === 'height');
+        document.getElementById('overlay-occupancy').classList.toggle('active', state.overlay === 'occupancy');
+        activeModeLabel.textContent = state.mode === 'orbit' ? 'Orbit' : 'Walkthrough';
+      }
+
+      function applyOverlay(name){
+        if(!state.geometry || !state.geometry.attributes.color) return;
+        let source = state.rgbColors;
+        if(name === 'height') source = state.heightColors;
+        if(name === 'occupancy') source = state.occupancyColors;
+        state.overlay = name;
+        state.geometry.attributes.color.array.set(source);
+        state.geometry.attributes.color.needsUpdate = true;
+        updateButtons();
+      }
+
+      function setMode(mode){
+        state.mode = mode;
+        timelineCard.classList.toggle('hidden', mode !== 'walkthrough' || state.cameraFrames.length === 0);
+        updateButtons();
+      }
+
+      function setWalkthroughFrame(index){
+        if(!state.cameraFrames.length) return;
+        const clamped = Math.max(0, Math.min(index, state.cameraFrames.length - 1));
+        state.frameIndex = clamped;
+        timeline.value = String(clamped);
+        const frame = state.cameraFrames[Math.floor(clamped)];
+        if(!frame) return;
+        const position = frame.position;
+        const forward = frame.forward;
+        const up = frame.up || [0, 1, 0];
+        camera.position.set(position[0], position[1], position[2]);
+        camera.up.set(up[0], up[1], up[2]);
+        camera.lookAt(position[0] + forward[0], position[1] + forward[1], position[2] + forward[2]);
+        timelineLabel.textContent = `Frame ${frame.index}`;
+      }
+
+      function buildPathLine(frames){
+        if(!frames.length) return null;
+        const points = frames.map((frame) => new THREE.Vector3(frame.position[0], frame.position[1], frame.position[2]));
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({color: 0x7dd3fc, transparent: true, opacity: 0.85});
+        const line = new THREE.Line(geometry, material);
+        line.visible = true;
+        return line;
+      }
+
+      function fitOrbitBounds(box){
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        state.modelCenter.copy(center);
+        state.radius = state.targetRadius = Math.max(size.x, size.y, size.z) * 1.2 || 10;
+        state.theta = state.targetTheta = -0.35;
+        state.phi = state.targetPhi = 0.45;
+        camera.position.set(center.x + state.radius, center.y + state.radius * 0.25, center.z + state.radius);
+        camera.lookAt(center);
+      }
+
+      function loadScene(){
+        viewerStatus.textContent = 'Loading manifest…';
+        fetch(ARTIFACTS_URL)
+          .then((response) => response.json())
+          .then((manifest) => {
+            const webPlyUrl = manifest.urls?.web_point_cloud || manifest.urls?.point_cloud;
+            const cameraPathUrl = manifest.urls?.camera_path;
+            const previewUrl = manifest.urls?.preview;
+            pathCountLabel.textContent = manifest.frame_count ? String(manifest.frame_count) : '0';
+            viewerStatus.textContent = 'Loading point cloud…';
+
+            if(previewUrl){
+              const img = new Image();
+              img.onload = () => { viewerStatus.textContent = 'Scene ready'; };
+              img.src = previewUrl;
+            }
+
+            const tasks = [
+              new Promise((resolve, reject) => {
+                loader.load(webPlyUrl, resolve, undefined, reject);
+              }),
+            ];
+
+            if(cameraPathUrl){
+              tasks.push(fetch(cameraPathUrl).then((response) => response.json()));
+            }
+
+            Promise.all(tasks)
+              .then(([geometry, cameraPath]) => {
+                geometry.computeBoundingBox();
+                const center = new THREE.Vector3();
+                geometry.boundingBox.getCenter(center);
+                geometry.translate(-center.x, -center.y, -center.z);
+                geometry.computeBoundingBox();
+                fitOrbitBounds(geometry.boundingBox);
+
+                const positionArray = geometry.attributes.position.array;
+                const nPoints = positionArray.length / 3;
+                pointCountLabel.textContent = nPoints.toLocaleString();
+
+                const yValues = [];
+                for(let index = 1; index < positionArray.length; index += 3){
+                  yValues.push(positionArray[index]);
+                }
+                const yMin = Math.min(...yValues);
+                const yMax = Math.max(...yValues);
+                const rgbAttribute = geometry.attributes.color ? geometry.attributes.color.array.slice() : null;
+                const rgbColors = rgbAttribute || new Float32Array(nPoints * 3);
+                const heightColors = new Float32Array(nPoints * 3);
+                const occupancyColors = new Float32Array(nPoints * 3);
+                const low = new THREE.Color(0x1d9e75);
+                const mid = new THREE.Color(0x378add);
+                const high = new THREE.Color(0xef9f27);
+                const top = new THREE.Color(0xd85a30);
+
+                for(let pointIndex = 0; pointIndex < nPoints; pointIndex += 1){
+                  const t = Math.max(0, Math.min(1, (positionArray[pointIndex * 3 + 1] - yMin) / Math.max(0.0001, yMax - yMin)));
+                  let color;
+                  if(t < 0.33){
+                    color = low.clone().lerp(mid, t / 0.33);
+                  } else if(t < 0.66){
+                    color = mid.clone().lerp(high, (t - 0.33) / 0.33);
+                  } else {
+                    color = high.clone().lerp(top, (t - 0.66) / 0.34);
+                  }
+                  heightColors[pointIndex * 3] = color.r;
+                  heightColors[pointIndex * 3 + 1] = color.g;
+                  heightColors[pointIndex * 3 + 2] = color.b;
+
+                  const occupancy = 0.3 + (1.0 - t) * 0.6;
+                  occupancyColors[pointIndex * 3] = occupancy;
+                  occupancyColors[pointIndex * 3 + 1] = occupancy;
+                  occupancyColors[pointIndex * 3 + 2] = occupancy;
+                }
+
+                if(!geometry.attributes.color){
+                  geometry.setAttribute('color', new THREE.BufferAttribute(heightColors.slice(), 3));
+                  state.overlay = 'height';
+                  document.getElementById('overlay-rgb').classList.remove('active');
+                  document.getElementById('overlay-height').classList.add('active');
+                }
+
+                state.geometry = geometry;
+                state.rgbColors = rgbColors;
+                state.heightColors = heightColors;
+                state.occupancyColors = occupancyColors;
+                pointCloud = new THREE.Points(geometry, pointMaterial);
+                scene.add(pointCloud);
+
+                state.cameraFrames = cameraPath?.frames || [];
+                pathCountLabel.textContent = state.cameraFrames.length ? String(state.cameraFrames.length) : '0';
+                if(state.cameraFrames.length){
+                  timeline.max = String(Math.max(state.cameraFrames.length - 1, 0));
+                  timeline.value = '0';
+                  timelineCard.classList.remove('hidden');
+                  const pathLine = buildPathLine(state.cameraFrames);
+                  if(pathLine){
+                    state.pathLine = pathLine;
+                    scene.add(pathLine);
+                  }
+                }
+
+                applyOverlay(state.overlay);
+                updateButtons();
+                viewerStatus.textContent = 'Scene ready';
+              })
+              .catch((error) => {
+                console.error(error);
+                viewerStatus.textContent = 'Failed to load scene';
+              });
+          })
+          .catch((error) => {
+            console.error(error);
+            viewerStatus.textContent = 'Failed to load manifest';
+          });
+      }
+
+      document.getElementById('mode-orbit').addEventListener('click', () => setMode('orbit'));
+      document.getElementById('mode-walkthrough').addEventListener('click', () => setMode('walkthrough'));
+      document.getElementById('overlay-rgb').addEventListener('click', () => applyOverlay('rgb'));
+      document.getElementById('overlay-height').addEventListener('click', () => applyOverlay('height'));
+      document.getElementById('overlay-occupancy').addEventListener('click', () => applyOverlay('occupancy'));
+      timeline.addEventListener('input', () => {
+        state.playing = false;
+        playbackToggle.textContent = 'Play';
+        setWalkthroughFrame(Number(timeline.value));
+      });
+      playbackToggle.addEventListener('click', () => {
+        state.playing = !state.playing;
+        playbackToggle.textContent = state.playing ? 'Pause' : 'Play';
+      });
+
+      canvas.addEventListener('mousedown', (event) => {
+        if(state.mode !== 'orbit') return;
+        state.dragging = true;
+        state.lastX = event.clientX;
+        state.lastY = event.clientY;
+      });
+      window.addEventListener('mouseup', () => { state.dragging = false; });
+      window.addEventListener('mousemove', (event) => {
+        if(!state.dragging || state.mode !== 'orbit') return;
+        state.targetTheta -= (event.clientX - state.lastX) * 0.008;
+        state.targetPhi = Math.max(0.05, Math.min(Math.PI / 2 - 0.01, state.targetPhi - (event.clientY - state.lastY) * 0.008));
+        state.lastX = event.clientX;
+        state.lastY = event.clientY;
+      });
+      canvas.addEventListener('wheel', (event) => {
+        if(state.mode !== 'orbit') return;
+        state.targetRadius = Math.max(2, Math.min(500, state.targetRadius + event.deltaY * 0.03));
+        event.preventDefault();
+      }, {passive: false});
+
+      function animate(){
+        requestAnimationFrame(animate);
+        resize();
+        if(state.mode === 'orbit'){
+          state.theta = lerp(state.theta, state.targetTheta, 0.1);
+          state.phi = lerp(state.phi, state.targetPhi, 0.1);
+          state.radius = lerp(state.radius, state.targetRadius, 0.1);
+          camera.position.set(
+            state.modelCenter.x + state.radius * Math.cos(state.phi) * Math.sin(state.theta),
+            state.modelCenter.y + state.radius * Math.sin(state.phi),
+            state.modelCenter.z + state.radius * Math.cos(state.phi) * Math.cos(state.theta)
+          );
+          camera.lookAt(state.modelCenter);
+        } else if(state.cameraFrames.length){
+          if(state.playing){
+            state.frameIndex += 0.25;
+            if(state.frameIndex >= state.cameraFrames.length) state.frameIndex = 0;
+            timeline.value = String(state.frameIndex);
+          }
+          const current = Math.floor(state.frameIndex);
+          const next = Math.min(current + 1, state.cameraFrames.length - 1);
+          const t = state.frameIndex - current;
+          const a = state.cameraFrames[current];
+          const b = state.cameraFrames[next] || a;
+          if(a && b){
+            const position = lerpVec(a.position, b.position, t);
+            const forward = normalize(lerpVec(a.forward, b.forward, t));
+            const up = normalize(lerpVec(a.up || [0, 1, 0], b.up || [0, 1, 0], t));
+            camera.position.set(position[0], position[1], position[2]);
+            camera.up.set(up[0], up[1], up[2]);
+            camera.lookAt(position[0] + forward[0], position[1] + forward[1], position[2] + forward[2]);
+            timelineLabel.textContent = `Frame ${Math.floor(state.frameIndex)}`;
+          }
+        }
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener('resize', resize);
+      setMode('orbit');
+      updateButtons();
+      resize();
+      loadScene();
+      animate();
+    })();
+    </script>
+  </div>
+{% elif scan.status == 'failed' %}
+  <div id="error-section" class="rounded-xl border border-red-200 bg-red-50 p-6 text-red-900 shadow-sm">
+    <p class="text-sm font-medium">Scan failed</p>
+    <p id="error-msg" class="mt-2 text-sm">{{ scan.error_message }}</p>
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if scan.status == 'pending' or scan.status == 'processing' %}
+<script>
+  const STATUS_URL = "{% url 'sites:scans:status' pk=site.pk scan_pk=scan.pk %}";
+
+  function updateBadge(status){
+    const b=document.getElementById('status-badge');
+    if(!b) return;
+    const cfg={pending:['Pending','bg-gray-100 text-gray-700'],processing:['Processing','bg-blue-100 text-blue-700'],done:['Done','bg-green-100 text-green-700'],failed:['Failed','bg-red-100 text-red-700']};
+    const [label,cls]=cfg[status]||['Unknown',''];
+    b.textContent=label;
+    b.className='inline-block px-2 py-0.5 rounded text-sm font-medium '+cls;
+  }
+
+  const timer=setInterval(async()=>{
+    try{
+      const res=await fetch(STATUS_URL);
+      const data=await res.json();
+      updateBadge(data.status);
+      if(data.status==='done'){clearInterval(timer);window.location.reload();}
+      if(data.status==='failed'){
+        clearInterval(timer);
+        const box=document.getElementById('error-section');
+        if(box){
+          box.style.display='block';
+          const msg=document.getElementById('error-msg');
+          if(msg) msg.textContent=data.error||'Unknown error';
+        }
+      }
+    }catch(e){console.warn('Poll error:',e);}
+  },3000);
+</script>
+{% endif %}
+{% endblock %}

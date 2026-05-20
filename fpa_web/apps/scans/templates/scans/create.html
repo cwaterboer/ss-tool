@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}New scan · FPA Scoping{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold tracking-tight">New scan</h1>
+    <p class="mt-1 text-sm text-slate-600">Minimum 2-3 minutes of video covering the full store perimeter.</p>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div>
+      <label class="mb-1 block text-sm font-medium">Upload</label>
+      {{ form.upload }}
+      {{ form.upload.errors }}
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium">Name</label>
+      {{ form.name }}
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium">Notes</label>
+      {{ form.notes }}
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <label class="mb-1 block text-sm font-medium">Input type</label>
+        {{ form.input_type }}
+      </div>
+      <div>
+        <label class="mb-1 block text-sm font-medium">FPS</label>
+        {{ form.fps }}
+      </div>
+    </div>
+
+    <details class="rounded-lg border border-slate-200 p-4">
+      <summary class="cursor-pointer text-sm font-medium">Advanced</summary>
+      <div class="mt-4 grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="mb-1 block text-sm font-medium">Mode</label>
+          {{ form.mode }}
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium">Window size</label>
+          {{ form.kv_window_size }}
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium">Keyframe interval</label>
+          {{ form.keyframe_interval }}
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium">Confidence threshold</label>
+          {{ form.conf_threshold }}
+        </div>
+      </div>
+    </details>
+
+    <div class="flex gap-3">
+      <button class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" type="submit">Start scan</button>
+      <a class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700" href="{% url 'sites:detail' site.pk %}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
