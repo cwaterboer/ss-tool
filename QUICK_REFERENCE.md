@@ -1,0 +1,261 @@
+# Quick Reference Card
+
+## Pushing Code to GitHub (Large File Strategy)
+
+### TL;DR: What to Do Right Now
+
+```bash
+cd /workspaces/ss-tool
+git add .
+git commit -m "Add deployment infrastructure and large file handling"
+git push origin main
+```
+
+**That's it!** The `.gitignore` prevents large files from being committed.
+
+---
+
+## Key Concept
+
+| Component | What Happens |
+|-----------|--------------|
+| **Code** (`.py`, `.html`, `.md`, `setup.sh`) | ✅ Committed to GitHub |
+| **lingbot-map.pt** (4.6GB) | ❌ NOT committed (auto-downloaded) |
+| **Database** (`.sqlite3`) | ❌ NOT committed (regenerated) |
+| **Scripts** (`download_checkpoint.py`) | ✅ Committed (runs on setup) |
+
+---
+
+## New Files Created
+
+### Documentation
+```
+GITHUB_PUSH_GUIDE.md ...................... Large file handling strategy
+SETUP_AND_DEPLOYMENT.md .................. Complete setup instructions
+GCP_DEPLOYMENT_GUIDE.md .................. Production deployment guide
+PUSH_CHECKLIST.md ........................ Step-by-step push verification
+GITHUB_PUSH_STRATEGY_SUMMARY.md .......... This document
+```
+
+### Scripts
+```
+setup.sh ............................... Run once: ./setup.sh
+fpa_web/scripts/download_checkpoint.py .. Downloads model from HuggingFace
+fpa_web/scripts/__init__.py ............ Package marker
+```
+
+### Configuration
+```
+.gitignore ............................. Updated to exclude *.pt files
+```
+
+---
+
+## How It Works
+
+### First Time User
+
+```bash
+# 1. Clone repo
+git clone https://github.com/YOUR_USERNAME/ss-tool.git
+cd ss-tool
+
+# 2. Run one setup command
+./setup.sh
+# → Creates venv
+# → Installs dependencies
+# → Downloads model (one-time, 10-30 min)
+# → Initializes database
+# → Creates demo account
+
+# 3. Start server
+cd fpa_web
+python manage.py runserver
+# → Opens on http://localhost:8000
+# → Login: demo / demo
+```
+
+### Subsequent Times
+
+```bash
+# Just start the server (no download needed, model is cached)
+cd fpa_web
+python manage.py runserver
+```
+
+---
+
+## File Sizes
+
+| File | Size | Pushed? |
+|------|------|---------|
+| `GITHUB_PUSH_GUIDE.md` | ~9KB | ✅ |
+| `setup.sh` | ~4KB | ✅ |
+| `download_checkpoint.py` | ~3KB | ✅ |
+| `GCP_DEPLOYMENT_GUIDE.md` | ~50KB | ✅ |
+| `lingbot-map.pt` | 4.6GB | ❌ |
+| `db.sqlite3` | ~1MB | ❌ |
+
+**Total repo size after push: ~150-200MB** (not 4.6GB!)
+
+---
+
+## If Something Goes Wrong
+
+### "Module not found: huggingface_hub"
+
+```bash
+pip install huggingface-hub
+python fpa_web/scripts/download_checkpoint.py
+```
+
+### "Git says file is too large"
+
+The .gitignore prevents this. If you see the error:
+```bash
+# Remove it from git history
+git rm --cached filename
+git add .gitignore
+git commit -m "Remove large file"
+git push
+```
+
+### "Checkpoint download keeps failing"
+
+```bash
+# Try again later (HuggingFace may be temporarily down)
+# Or download manually:
+python fpa_web/scripts/download_checkpoint.py
+
+# Or use a custom path:
+export LINGBOT_CHECKPOINT_PATH=/path/to/model.pt
+python manage.py runserver
+```
+
+---
+
+## Verification Checklist
+
+Before pushing, verify:
+
+- [ ] `git status` shows only code files (no .sqlite3, no .pt)
+- [ ] `git diff --cached --stat` shows files < 1MB
+- [ ] `setup.sh` and `download_checkpoint.py` are executable (`chmod +x`)
+- [ ] All documentation files are included
+
+After pushing, verify:
+
+- [ ] GitHub repo shows ~150MB (not 4.6GB)
+- [ ] All 40+ files visible in web UI
+- [ ] `setup.sh` shows with executable icon
+- [ ] Clone works: `git clone ... && ./setup.sh`
+
+---
+
+## Quick Commands
+
+```bash
+# Current status
+git status
+
+# See what will be pushed
+git diff --cached --stat
+
+# Commit with message
+git commit -m "Your message"
+
+# Push to GitHub
+git push origin main
+
+# Verify nothing large is staged
+git diff --cached -z | xargs -0 du -k | sort -rn | head -5
+
+# Make scripts executable
+chmod +x setup.sh fpa_web/scripts/download_checkpoint.py
+
+# Test fresh clone
+git clone ... /tmp/test && cd /tmp/test && ./setup.sh
+```
+
+---
+
+## Environment Variables (Optional)
+
+```bash
+# Use custom checkpoint path
+export LINGBOT_CHECKPOINT_PATH=/path/to/model.pt
+
+# Use custom checkpoint directory
+export CHECKPOINT_ROOT=/opt/models
+
+# Then run:
+cd fpa_web
+python manage.py runserver
+```
+
+---
+
+## File Structure After Push
+
+```
+GitHub Repository
+├── GITHUB_PUSH_GUIDE.md (9KB)
+├── SETUP_AND_DEPLOYMENT.md (15KB)
+├── GCP_DEPLOYMENT_GUIDE.md (50KB)
+├── setup.sh (4KB)
+├── fpa_web/
+│   ├── scripts/
+│   │   ├── download_checkpoint.py (3KB)
+│   │   └── __init__.py
+│   ├── requirements.txt
+│   ├── manage.py
+│   ├── config/settings/
+│   │   ├── base.py (UPDATED)
+│   │   ├── local.py
+│   │   └── gcp.py
+│   ├── apps/scans/
+│   │   ├── models.py (UPDATED)
+│   │   ├── tasks.py (UPDATED)
+│   │   └── migrations/0003_*.py (NEW)
+│   └── templates/
+│       ├── base.html (UPDATED - logout fix)
+│       └── registration/login.html (UPDATED - login fix)
+└── .gitignore (UPDATED - added *.pt)
+
+NOT in GitHub:
+├── lingbot-map.pt (4.6GB - downloaded by setup.sh)
+├── db.sqlite3 (regenerated by migrate)
+├── venv/ (created by setup.sh)
+├── __pycache__/
+└── media/scans/ (user-generated)
+```
+
+---
+
+## One More Thing
+
+After push, tell new users:
+
+> Setup is simple: Clone → Run `./setup.sh` → Done!
+>
+> The setup script:
+> - Creates Python environment
+> - Installs dependencies  
+> - Downloads model from HuggingFace (4.6GB, one-time)
+> - Initializes database
+> - Sets up demo account
+>
+> Then: `cd fpa_web && python manage.py runserver`
+>
+> Visit: http://localhost:8000 (login: demo/demo)
+
+---
+
+**Ready to push? Run:**
+
+```bash
+cd /workspaces/ss-tool && git add . && git commit -m "Add deployment infrastructure" && git push origin main
+```
+
+✅ Done!
+

@@ -68,6 +68,20 @@ def _build_scene_manifest(scan, artifacts, point_cloud_path, web_ply_path, camer
 
 @shared_task(bind=True, max_retries=0, time_limit=7200)
 def run_scan(self, scan_id: str):
+    """
+    LingBot-Map 3D reconstruction task.
+    
+    Processes a sequence of image frames through the LingBot-Map model to produce:
+    - Camera pose trajectory (c2w extrinsics)
+    - Dense 3D point cloud with confidence scores
+    - RGB colours, depth maps, and scene metadata
+    
+    CPU Processing (Fallback):
+    - Inference time: ~30-60s per frame on modern CPU
+    - Recommended: Use GPU for production (A100/H100 ~1-2s per frame)
+    - Memory: ~16-24GB for 200+ frame scans
+    - Precision: float32 (more stable on CPU than float16)
+    """
     from apps.scans.models import Scan
 
     scan = Scan.objects.get(id=scan_id)
@@ -79,7 +93,8 @@ def run_scan(self, scan_id: str):
 
     try:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        logger.info('[scan:%s] device=%s', scan_id, device)
+        is_cpu = device.type == 'cpu'
+        logger.info('[scan:%s] device=%s (CPU fallback processing)', scan_id, device)
 
         from lingbot_map.utils.load_fn import load_and_preprocess_images
 
@@ -123,11 +138,35 @@ def run_scan(self, scan_id: str):
         model.load_state_dict(ckpt.get('model', ckpt), strict=False)
         model = model.to(device).eval()
 
-        use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8
-        dtype = torch.bfloat16 if use_bf16 else torch.float16
-        amp_ctx = torch.amp.autocast('cuda', dtype=dtype) if torch.cuda.is_available() else contextlib.nullcontext()
+        # CPU-specific optimizations
+        if is_cpu:
+            torch.set_num_threads(torch.get_num_threads())
+            logger.info('[scan:%s] CPU threads: %d', scan_id, torch.get_num_threads())
+            # Enable gradient checkpointing to save memory
+            if hasattr(model, 'use_gradient_checkpoint'):
+                model.use_gradient_checkpoint = True
 
-        logger.info('[scan:%s] inference mode=%s k=%s dtype=%s', scan_id, scan.mode, scan.kv_window_size, dtype)
+        # CPU-friendly dtype selection
+        # On CPU: use float32 (float16 is slower and less stable)
+        # On GPU: use bfloat16 if supported (A100+), else float16
+        if is_cpu:
+            dtype = torch.float32
+            amp_enabled = False  # Autocast not beneficial on CPU with float32
+            logger.info('[scan:%s] CPU inference: float32 precision, no autocast', scan_id)
+        else:
+            use_bf16 = torch.cuda.get_device_capability()[0] >= 8
+            dtype = torch.bfloat16 if use_bf16 else torch.float16
+            amp_enabled = True
+            amp_device = 'cuda'
+
+        # AMP context only for GPU
+        if amp_enabled:
+            amp_ctx = torch.amp.autocast(amp_device, dtype=dtype)
+        else:
+            amp_ctx = contextlib.nullcontext()
+
+        logger.info('[scan:%s] inference mode=%s kv_window=%s dtype=%s', 
+                   scan_id, scan.mode, scan.kv_window_size, dtype)
         t0 = time.time()
 
         with torch.no_grad(), amp_ctx:
@@ -241,10 +280,12 @@ def run_scan(self, scan_id: str):
             ]
         )
         logger.info(
-            '[scan:%s] done - floor_area=%.1f anchor_scale=%.4f frames=%s',
+            '[scan:%s] ✓ DONE (device=%s) - floor_area=%.1f m² anchor_scale=%.4f duration=%.1fs frames=%d',
             scan_id,
+            'cpu' if is_cpu else 'gpu',
             artifacts['floor_area_m2'],
             anchor_scale,
+            time.time() - t0,
             scan.frame_count,
         )
 

@@ -11,3 +11,38 @@ CLAUDE.md
 .claude/
 .agents/
 skyseg.onnx
+
+# Large model checkpoints (download during setup, don't commit)
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+/tmp/checkpoints/
+/opt/checkpoints/
+/checkpoints/
+lingbot-map.pt
+
+# Django
+db.sqlite3
+*.log
+/media/
+/staticfiles/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+key.json
+
+# GCP
+gcp-key.json
+service-account-key.json

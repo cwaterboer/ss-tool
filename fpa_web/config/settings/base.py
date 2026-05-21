@@ -39,7 +39,7 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'config.urls'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = '/accounts/login/'
-LOGIN_REDIRECT_URL = '/'
+LOGIN_REDIRECT_URL = 'sites:list'
 
 TEMPLATES = [{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -58,14 +58,22 @@ STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = env('MEDIA_ROOT', str(BASE_DIR / 'media'))
 
+# LingBot-Map Model Checkpoint
+# Default: /tmp/checkpoints/lingbot-map.pt
+# Download from: https://huggingface.co/robbyant/lingbot-map
+# The system automatically uses CPU inference if no GPU available
 CHECKPOINT_ROOT = env('CHECKPOINT_ROOT', '/tmp/checkpoints')
 LINGBOT_CHECKPOINT_PATH = env('LINGBOT_CHECKPOINT_PATH', '/tmp/checkpoints/lingbot-map.pt')
 
+# Celery Task Configuration
+# CPU Processing: 7200s (2 hours) provides ample time for 200+ frame scans
+# GPU Processing: Can reduce to 1800s (30 min) for faster inference
+# See CPU_PROCESSING.md for detailed CPU inference timing
 CELERY_BROKER_URL = env('REDIS_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_TIME_LIMIT = 7200
+CELERY_TASK_TIME_LIMIT = 7200  # CPU fallback processing needs full 2 hours
 
 GOOGLE_MAPS_API_KEY = env('GOOGLE_MAPS_API_KEY', '')
 

@@ -28,7 +28,7 @@ class Scan(models.Model):
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     input_type = models.CharField(max_length=10, choices=InputType.choices, default=InputType.VIDEO)
-    celery_task_id = models.CharField(max_length=128, blank=True)
+    celery_task_id = models.CharField(max_length=128, blank=True, null=True)
     error_message = models.TextField(blank=True)
 
     fps = models.IntegerField(default=10)
