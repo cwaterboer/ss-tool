@@ -28,4 +28,5 @@ images:
   - 'gcr.io/ss-tool-498115/fpa-web:$COMMIT_SHA'
 
 options:
-  logging: LEGACY
+  logging: CLOUD_LOGGING_ONLY
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
