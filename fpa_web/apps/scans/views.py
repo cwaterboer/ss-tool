@@ -32,28 +32,44 @@ class ScanCreateView(LoginRequiredMixin, CreateView):
         site = self.get_site()
         scan = form.save(commit=False)
         scan.site = site
+        scan.save()  # save first to get UUID
 
         upload = self.request.FILES.get('upload')
         if not upload:
             form.add_error(None, 'Please upload a video (.mp4) or image archive (.zip).')
             return self.form_invalid(form)
 
-        input_dir = scan.input_path
-        os.makedirs(input_dir, exist_ok=True)
+        import tempfile
+        from apps.scans.gcs import is_gcs_mode, upload_folder_to_gcs
 
-        if scan.input_type == Scan.InputType.VIDEO:
-            video_path = os.path.join(input_dir, 'input.mp4')
-            with open(video_path, 'wb') as handle:
-                for chunk in upload.chunks():
-                    handle.write(chunk)
-            from .tasks import _extract_frames
-            _extract_frames(video_path, input_dir, fps=scan.fps)
-        else:
-            archive = zipfile.ZipFile(io.BytesIO(upload.read()))
-            archive.extractall(input_dir)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            frames_dir = os.path.join(tmpdir, 'frames')
+            os.makedirs(frames_dir, exist_ok=True)
 
-        scan.input_dir = input_dir
-        scan.save()
+            if scan.input_type == Scan.InputType.VIDEO:
+                video_path = os.path.join(tmpdir, 'input.mp4')
+                with open(video_path, 'wb') as handle:
+                    for chunk in upload.chunks():
+                        handle.write(chunk)
+                from .tasks import _extract_frames
+                _extract_frames(video_path, frames_dir, fps=scan.fps)
+            else:
+                archive = zipfile.ZipFile(io.BytesIO(upload.read()))
+                archive.extractall(frames_dir)
+
+            if os.environ.get('USE_GCS', '').lower() == 'true':
+                gcs_prefix = f"media/scans/{scan.id}/input"
+                upload_folder_to_gcs(frames_dir, gcs_prefix)
+                scan.input_dir = gcs_prefix
+            else:
+                import shutil
+                local_input = scan.input_path
+                os.makedirs(local_input, exist_ok=True)
+                for f in os.listdir(frames_dir):
+                    shutil.copy(os.path.join(frames_dir, f), local_input)
+                scan.input_dir = local_input
+
+        scan.save(update_fields=['input_dir'])
 
         from .tasks import run_scan
         run_scan.delay(str(scan.id))

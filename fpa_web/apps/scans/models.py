@@ -76,6 +76,8 @@ class Scan(models.Model):
     def _media_url(self, abs_path):
         if not abs_path:
             return None
+        if abs_path.startswith('https://') or abs_path.startswith('http://'):
+            return abs_path
         rel = os.path.relpath(abs_path, settings.MEDIA_ROOT)
         return settings.MEDIA_URL + rel
 

@@ -1,15 +1,27 @@
-django>=4.2,<5.0
-celery>=5.3
+django==6.0.5
+celery[redis]==5.3.5
 redis>=5.0
-Pillow>=10.0
-numpy>=1.26
-scipy>=1.11
-trimesh>=4.0
-torch>=2.0
-torchvision>=0.15
-opencv-python>=4.8
-tqdm>=4.66
-einops>=0.7
-safetensors>=0.4
-huggingface_hub>=0.20
 python-decouple>=3.8
+
+# Image and ML processing
+Pillow>=10.0
+numpy>=1.24.0
+torch>=2.0.0
+scipy>=1.11.0
+trimesh>=3.20.0
+
+# LingBot-Map model support
+einops>=0.7.0
+safetensors>=0.4.0
+huggingface-hub>=0.17.0
+
+# Google Cloud Platform support
+google-cloud-storage>=2.10.0
+django-storages[google]>=1.14.0
+psycopg2-binary>=2.9.0
+
+# CORS support for API requests
+django-cors-headers>=4.3.0
+
+# Production server
+gunicorn>=21.0.0
