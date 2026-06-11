@@ -28,4 +28,4 @@ images:
   - 'gcr.io/ss-tool-498115/fpa-web:$COMMIT_SHA'
 
 options:
-  logging: CLOUD_LOGGING_ONLY
+  logging: LEGACY
