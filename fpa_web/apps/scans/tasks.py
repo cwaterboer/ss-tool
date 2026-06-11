@@ -247,7 +247,7 @@ def _depth_to_world_points(depth, depth_conf, extrinsic, intrinsic):
         cx, cy = float(K[0, 2]), float(K[1, 2])
 
         x_cam = (uu - cx) * d / (fx + 1e-8)
-        y_cam = (vv - cy) * d / (fy + 1e-8)
+        y_cam = -((vv - cy) * d / (fy + 1e-8))
         z_cam = d
 
         pts_cam = np.stack([
