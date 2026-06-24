@@ -82,3 +82,37 @@ class UploadCompleteAPIView(View):
             'status': 'processing',
             'scan_id': str(scan.id),
         })
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ScanListAPIView(View):
+    def get(self, request, site_id):
+        site = get_object_or_404(JobSite, pk=site_id)
+        scans = Scan.objects.filter(site=site).order_by('-created_at').values(
+            'id', 'name', 'status', 'frame_count', 'created_at'
+        )
+        return JsonResponse({'scans': [
+            {
+                'id': str(s['id']),
+                'name': s['name'],
+                'status': s['status'],
+                'frame_count': s['frame_count'],
+                'created_at': s['created_at'].isoformat() if s['created_at'] else None,
+            }
+            for s in scans
+        ]})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ScanDetailAPIView(View):
+    def get(self, request, site_id, scan_id):
+        scan = get_object_or_404(Scan, pk=scan_id, site__id=site_id)
+        return JsonResponse({
+            'id': str(scan.id),
+            'name': scan.name,
+            'status': scan.status,
+            'frame_count': scan.frame_count,
+            'floor_area': round(scan.floor_area_m2, 1) if scan.floor_area_m2 else None,
+            'preview_url': scan.preview_url,
+            'web_ply_url': scan.web_ply_url,
+            'created_at': scan.created_at.isoformat() if scan.created_at else None,
+        })
